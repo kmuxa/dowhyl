@@ -29,6 +29,12 @@ if grep -q '^LITELLM_MASTER_KEY=sk-local-master-change-me$' .env; then
   ok "generated a random LITELLM_MASTER_KEY"
 fi
 
+# repair older .env files that predate the Postgres additions (needed for keys/budgets)
+env_patched=0
+grep -q '^POSTGRES_PASSWORD=' .env || { echo 'POSTGRES_PASSWORD=litellm' >> .env; env_patched=1; }
+grep -q '^DATABASE_URL='     .env || { echo 'DATABASE_URL=postgresql://litellm:litellm@postgres:5432/litellm' >> .env; env_patched=1; }
+[[ "$env_patched" -eq 1 ]] && ok "added Postgres config (DATABASE_URL) to your existing .env"
+
 # stop here if the required free keys aren't filled yet
 set -a; . ./.env; set +a
 if [[ -z "${NVIDIA_API_KEY:-}" && -z "${GEMINI_API_KEY:-}" && -z "${GROQ_API_KEY:-}" ]]; then
@@ -45,12 +51,27 @@ fi
 
 say "3/6  Starting gateway (Postgres + Redis + LiteLLM)"
 docker compose up -d
+# if we just added DATABASE_URL to an already-running stack, recreate litellm so it re-reads env
+[[ "$env_patched" -eq 1 ]] && docker compose up -d --force-recreate litellm >/dev/null 2>&1 || true
 printf "  waiting for gateway"
 for _ in $(seq 1 30); do
   curl -fsS http://localhost:4000/health/liveliness >/dev/null 2>&1 && break
   printf "."; sleep 2
 done; echo
 curl -fsS http://localhost:4000/health/liveliness >/dev/null 2>&1 && ok "gateway up at http://localhost:4000" || { warn "gateway didn't come up — check: docker compose logs litellm"; exit 1; }
+
+# confirm the database connected (virtual keys/budgets need it); give migrations a moment
+printf "  waiting for database"
+for _ in $(seq 1 15); do
+  [[ "$(curl -fsS http://localhost:4000/health/readiness 2>/dev/null | jq -r '.db // empty')" == "connected" ]] && break
+  printf "."; sleep 2
+done; echo
+if [[ "$(curl -fsS http://localhost:4000/health/readiness 2>/dev/null | jq -r '.db // empty')" == "connected" ]]; then
+  ok "database connected"
+else
+  warn "database not connected — DATABASE_URL may be missing/wrong, or Postgres unhealthy."
+  warn "check:  docker compose ps postgres   and   docker compose logs litellm | grep -i prisma"
+fi
 
 say "4/6  Creating the \$10/month budget-capped key"
 if grep -qE '^GATEWAY_KEY=.+' .env; then

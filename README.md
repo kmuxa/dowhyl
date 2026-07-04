@@ -140,7 +140,7 @@ Copy `AGENTS.template.md` into any repo you work on, rename it `AGENTS.md`, and 
 ## Troubleshooting
 
 - **`status` says gateway down** → `docker compose up -d`; logs: `docker compose logs litellm`.
-- **Key-gen returned HTTP 500 during setup** → virtual keys need Postgres; make sure it's healthy (`docker compose ps postgres`) and re-run `setup.sh`. To unblock immediately without a cap, set `GATEWAY_KEY` in `.env` to your `LITELLM_MASTER_KEY`.
+- **Key-gen returned HTTP 500 / "DB not connected"** → LiteLLM has no `DATABASE_URL`. Usually because your `.env` predates the Postgres addition (setup never overwrites `.env`). Re-running `setup.sh` now repairs it automatically; or do it manually: `echo 'POSTGRES_PASSWORD=litellm' >> .env && echo 'DATABASE_URL=postgresql://litellm:litellm@postgres:5432/litellm' >> .env`, then `docker compose up -d --force-recreate litellm`, and check `curl -s localhost:4000/health/readiness | jq -r '.db'` shows `connected`. To skip the cap entirely, set `GATEWAY_KEY` in `.env` to your `LITELLM_MASTER_KEY`. (If Postgres was ever initialized with a different password, `docker compose down -v` to reset its volume.)
 - **`http://localhost:4000/v1` shows "not found" in a browser** → expected: `/v1` has no page. The client calls `/v1/chat/completions`. Test properly: `curl http://localhost:4000/v1/models -H "Authorization: Bearer $GATEWAY_KEY"`. (If OpenCode ever 404s on real calls, try the base URL without `/v1`.)
 - **Test prompt returns nothing** → you have no key for that lane yet; add `GEMINI_API_KEY` or `GROQ_API_KEY` and `docker compose restart litellm`.
 - **A model errors** → it was probably renamed; run `refresh-models`, update `config/litellm.yaml` (fallbacks cover you meanwhile).
