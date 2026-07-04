@@ -68,4 +68,5 @@ guardrails:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  fail_closed_budget_enforcement: true       # the $10/mo cap is a HARD ceiling
+  database_url: os.environ/DATABASE_URL        # Postgres: enables virtual keys + budgets
+  fail_closed_budget_enforcement: true         # the $10/mo cap is a HARD ceiling

@@ -4,22 +4,38 @@
 #
 #  usage:
 #     code-agent [name]                 # worktree + OS sandbox (default)
-#     SANDBOX=docker code-agent [name]  # container: real boundary, for unattended runs
+#     SANDBOX=docker code-agent         # container: strong fs/process isolation
 #     SANDBOX=none   code-agent [name]  # bare (permission prompts only)
+#     code-agent --clean <name>         # remove a finished worktree + branch
 #
-#  A git WORKTREE keeps the agent's code changes on a throwaway branch you can
-#  delete. The SANDBOX layer is what contains a rogue/injected command:
-#     os     -> writes limited to the worktree (+ /tmp); network allowed
-#               (the agent must reach the gateway + your primary)
-#     docker -> writes + network fully contained; use for "let it run" sessions
-#  Cleanup when done:  code-agent --clean <name>
+#  os/none : the agent works in a throwaway git WORKTREE (separate branch+dir).
+#            The OS sandbox limits writes to that worktree; network stays open
+#            (the agent must reach the gateway + your primary).
+#  docker  : your repo is mounted at /work inside a container; nothing else on
+#            your Mac is reachable. Use for "let it run" / unattended sessions.
+#            (Filesystem/process isolation; network open for gateway+models.)
 # ============================================================================
 set -euo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="$(git rev-parse --show-toplevel 2>/dev/null || { echo "run inside a git repo"; exit 1; })"
+REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "run inside a git repo"; exit 1; }
 WT_ROOT="$REPO/../$(basename "$REPO")-agents"
 
+# load your flat-rate primary (GLM by default) + the gateway key
+[[ -f "$KIT_DIR/config/primary.env" ]] && source "$KIT_DIR/config/primary.env"
+# if the primary key is still the placeholder, ignore it (use free gateway lanes)
+if [[ "${ANTHROPIC_AUTH_TOKEN:-}" == *paste-your* ]]; then
+  unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL
+fi
+# SAFE=1: sensitive repo — don't load the flat-rate primary (often China-hosted);
+# use only the no-train gateway lanes (route to 'frontier'/NVIDIA in OpenCode).
+if [[ "${SAFE:-}" == "1" ]]; then
+  unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL
+  echo "→ SAFE mode: primary disabled; use no-train lanes (frontier / NVIDIA) only"
+fi
+[[ -f "$KIT_DIR/.env" ]] && export GATEWAY_KEY="$(grep -E '^GATEWAY_KEY=' "$KIT_DIR/.env" | cut -d= -f2-)"
+
+# cleanup helper
 if [[ "${1:-}" == "--clean" ]]; then
   name="${2:?usage: code-agent --clean <name>}"
   git -C "$REPO" worktree remove --force "$WT_ROOT/$name" 2>/dev/null || true
@@ -27,40 +43,40 @@ if [[ "${1:-}" == "--clean" ]]; then
   echo "cleaned $name"; exit 0
 fi
 
+MODE="${SANDBOX:-os}"
+
+# ---- docker: mount the repo, contain everything else -----------------------
+if [[ "$MODE" == "docker" ]]; then
+  command -v docker >/dev/null || { echo "docker not found"; exit 1; }
+  echo "→ sandbox: docker  (repo mounted at /work; rest of your Mac isolated)"
+  echo "  tip: 'git switch -c wip/feature' first if you want change isolation"
+  exec docker run --rm -it \
+    -v "$REPO":/work -w /work \
+    --env ANTHROPIC_BASE_URL --env ANTHROPIC_AUTH_TOKEN --env ANTHROPIC_MODEL --env GATEWAY_KEY \
+    --add-host=host.docker.internal:host-gateway \
+    opencode-sandbox:latest
+fi
+
+# ---- os / none: throwaway worktree on the host -----------------------------
 NAME="${1:-agent-$(date +%H%M%S)}"
 WT="$WT_ROOT/$NAME"
-
-# load your flat-rate primary (GLM by default) if configured
-[[ -f "$KIT_DIR/config/primary.env" ]] && source "$KIT_DIR/config/primary.env"
-# hand OpenCode the gateway key for the free/frontier tiers
-[[ -f "$KIT_DIR/.env" ]] && export GATEWAY_KEY="$(grep -E '^GATEWAY_KEY=' "$KIT_DIR/.env" | cut -d= -f2-)"
 export OPENCODE_CONFIG="$KIT_DIR/opencode/opencode.json"
-
 echo "→ worktree: $WT   (branch wip/$NAME)"
 git -C "$REPO" worktree add -b "wip/$NAME" "$WT" >/dev/null
 cd "$WT"
 
-case "${SANDBOX:-os}" in
-  docker)
-    echo "→ sandbox: docker (contained fs + network)"
-    docker run --rm -it \
-      -v "$WT":/work -w /work \
-      --env ANTHROPIC_BASE_URL --env ANTHROPIC_AUTH_TOKEN --env ANTHROPIC_MODEL \
-      --env GATEWAY_KEY --env OPENCODE_CONFIG=/work/.opencode.json \
-      --add-host=host.docker.internal:host-gateway \
-      opencode-sandbox:latest opencode
-    ;;
+case "$MODE" in
   os)
     if [[ "$OSTYPE" == darwin* ]]; then
       echo "→ sandbox: macOS Seatbelt (writes limited to worktree)"
       exec sandbox-exec -D WT="$WT" -f "$KIT_DIR/sandbox/opencode.sb" opencode
     elif command -v bwrap >/dev/null; then
       echo "→ sandbox: bubblewrap (writes limited to worktree)"
-      exec bwrap --dev-bind / / --bind "$WT" "$WT" \
-        --ro-bind "$HOME/.ssh" /dev/null --ro-bind "$HOME/.aws" /dev/null \
-        opencode
+      exec bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp \
+        --bind "$WT" "$WT" --tmpfs "$HOME/.ssh" --tmpfs "$HOME/.aws" \
+        --die-with-parent opencode
     else
-      echo "⚠ no OS sandbox available (install bubblewrap on Linux); running with permission prompts only"
+      echo "⚠ no OS sandbox available (install bubblewrap on Linux); permission prompts only"
       exec opencode
     fi
     ;;
@@ -68,5 +84,5 @@ case "${SANDBOX:-os}" in
     echo "→ sandbox: none (permission prompts only)"
     exec opencode
     ;;
-  *) echo "unknown SANDBOX=$SANDBOX (use os|docker|none)"; exit 1 ;;
+  *) echo "unknown SANDBOX=$MODE (use os|docker|none)"; exit 1 ;;
 esac

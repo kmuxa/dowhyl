@@ -1,6 +1,20 @@
-# Redis (cache + shared cooldown/budget state) + LiteLLM gateway.
+# Postgres (virtual keys + budgets) + Redis (cache/cooldown) + LiteLLM gateway.
 # Start with:  docker compose up -d   (setup.sh does this for you)
 services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-litellm}
+      POSTGRES_DB: litellm
+    volumes: ["litellm-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
   redis:
     image: redis:7
     restart: unless-stopped
@@ -16,8 +30,8 @@ services:
     image: ghcr.io/berriai/litellm:main-stable
     restart: unless-stopped
     depends_on:
-      redis:
-        condition: service_healthy
+      postgres: {condition: service_healthy}
+      redis:    {condition: service_healthy}
     env_file: .env
     ports: ["4000:4000"]
     volumes:
@@ -28,4 +42,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://localhost:4000/health/liveliness"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+
+volumes:
+  litellm-pgdata:

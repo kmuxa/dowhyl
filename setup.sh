@@ -22,6 +22,13 @@ say "2/6  Config files"
 chmod +x bin/* 2>/dev/null || true
 ok "made bin/ scripts executable"
 
+# auto-generate an admin key if still the placeholder
+if grep -q '^LITELLM_MASTER_KEY=sk-local-master-change-me$' .env; then
+  newkey="sk-$(openssl rand -hex 24 2>/dev/null || echo local-$(date +%s))"
+  tmp=$(mktemp); sed "s#^LITELLM_MASTER_KEY=.*#LITELLM_MASTER_KEY=${newkey}#" .env > "$tmp" && mv "$tmp" .env
+  ok "generated a random LITELLM_MASTER_KEY"
+fi
+
 # stop here if the required free keys aren't filled yet
 set -a; . ./.env; set +a
 if [[ -z "${NVIDIA_API_KEY:-}" && -z "${GEMINI_API_KEY:-}" && -z "${GROQ_API_KEY:-}" ]]; then
@@ -36,7 +43,7 @@ if [[ "$need_docker" -eq 1 ]]; then
   exit 0
 fi
 
-say "3/6  Starting gateway (Redis + LiteLLM)"
+say "3/6  Starting gateway (Postgres + Redis + LiteLLM)"
 docker compose up -d
 printf "  waiting for gateway"
 for _ in $(seq 1 30); do
@@ -58,7 +65,8 @@ else
     tmp=$(mktemp); sed "s#^GATEWAY_KEY=.*#GATEWAY_KEY=${key}#" .env > "$tmp" && mv "$tmp" .env
     ok "created + saved GATEWAY_KEY (hard cap: \$10 / 30 days)"
   else
-    warn "could not create budgeted key — you can still use LITELLM_MASTER_KEY, but it has no cap"
+    warn "could not create budgeted key (virtual keys need Postgres — check: docker compose ps postgres)."
+    warn "Unblock now: set GATEWAY_KEY in .env to your LITELLM_MASTER_KEY (no cap), or re-run once Postgres is healthy."
   fi
 fi
 

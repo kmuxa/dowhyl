@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# status — is the gateway up, how much of the $10/mo cap is left, which lanes are active.
+# status — gateway health, remaining $ budget, tier->model roles, active lanes, primary.
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$KIT_DIR/.env" ]] && set -a && . "$KIT_DIR/.env" && set +a
+CFG="$KIT_DIR/config/litellm.yaml"
 
 echo "gateway:"
 if curl -fsS http://localhost:4000/health/liveliness >/dev/null 2>&1; then
-  echo "  ✓ up (http://localhost:4000)"
+  echo "  ✓ up (http://localhost:4000)  — call it at /v1/chat/completions"
 else
   echo "  ✗ down — run:  docker compose up -d"; exit 0
 fi
@@ -14,22 +15,30 @@ fi
 if [[ -n "${GATEWAY_KEY:-}" ]]; then
   echo "spend (this key):"
   curl -fsS http://localhost:4000/key/info -H "Authorization: Bearer $GATEWAY_KEY" 2>/dev/null \
-    | jq -r '"  spend $\(.info.spend // 0) / cap $\(.info.max_budget // "?")  (resets \(.info.budget_duration // "?"))"' \
-    2>/dev/null || echo "  (could not read key info)"
+    | jq -r '"  spend $\(.info.spend // 0) / cap $\(.info.max_budget // "?")  (resets every \(.info.budget_duration // "?"))"' \
+    2>/dev/null || echo "  (no budget info — key not DB-backed yet)"
 fi
 
-echo "active lanes (keys present in .env):"
-for pair in "NVIDIA_API_KEY:nvidia" "GEMINI_API_KEY:gemini(free)" "GROQ_API_KEY:groq" \
-            "CEREBRAS_API_KEY:cerebras" "OPENROUTER_API_KEY:openrouter" \
-            "DEEPSEEK_API_KEY:deepseek(overflow)" "ANTHROPIC_API_KEY:anthropic(frontier)" \
-            "OPENAI_API_KEY:openai(frontier)"; do
+echo "tiers → models  (config/litellm.yaml):"
+for tier in frontier smart mid long cheap overflow; do
+  models=$(grep -E "model_name: ${tier}," "$CFG" 2>/dev/null | grep -oE 'model: [a-z_]+/[^,} ]+' | sed 's/model: //')
+  [[ -z "$models" ]] && continue
+  echo "  ${tier}:"
+  echo "$models" | sed 's/^/    - /'
+done
+
+echo "active lanes (API keys present in .env):"
+for pair in "NVIDIA_API_KEY:nvidia [no-train]" "GEMINI_API_KEY:gemini (free) [trains]" \
+            "GROQ_API_KEY:groq" "CEREBRAS_API_KEY:cerebras" "OPENROUTER_API_KEY:openrouter" \
+            "DEEPSEEK_API_KEY:deepseek (overflow)" "ANTHROPIC_API_KEY:anthropic (frontier) [no-train]" \
+            "OPENAI_API_KEY:openai (frontier) [no-train]"; do
   var="${pair%%:*}"; label="${pair##*:}"
   [[ -n "${!var:-}" ]] && echo "  ✓ $label"
 done
 
-echo "primary:"
-if [[ -f "$KIT_DIR/config/primary.env" ]]; then
-  grep -E '^export ANTHROPIC_MODEL=' "$KIT_DIR/config/primary.env" | sed 's/export ANTHROPIC_MODEL=/  active model: /'
+echo "flat-rate primary  (config/primary.env, used directly by OpenCode):"
+if [[ -f "$KIT_DIR/config/primary.env" ]] && ! grep -q 'paste-your' "$KIT_DIR/config/primary.env"; then
+  grep -E '^export ANTHROPIC_MODEL=' "$KIT_DIR/config/primary.env" | sed 's/export ANTHROPIC_MODEL=/  active: /'
 else
-  echo "  none configured (pure-\$0 mode — using gateway free lanes)"
+  echo "  none set (pure-\$0 mode — OpenCode uses the free gateway lanes above)"
 fi
