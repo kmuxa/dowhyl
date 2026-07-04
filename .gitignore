@@ -1,0 +1,45 @@
+# ============================================================================
+#  .gitignore — the *.example and *.template files ARE tracked; the live
+#  copies (which hold your keys) are NOT. Never commit real credentials.
+# ============================================================================
+
+# --- secrets & generated local config (KEEP OUT OF GIT) ---------------------
+.env
+.env.*
+!.env.example
+config/primary.env
+!config/primary.env.example
+*.key
+*.pem
+*credentials*
+.mcp-auth/
+
+# --- runtime output / logs --------------------------------------------------
+var/*
+!var/.gitkeep
+*.log
+
+# --- agent worktrees (created next to your repo, not here) & local state -----
+../*-agents/
+.opencode/
+.opencode.json
+
+# --- language / build cruft -------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+dist/
+build/
+
+# --- OS / editor ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- misc -------------------------------------------------------------------
+*.zip

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  code-agent — launch OpenCode on an isolated copy of your repo.
+#
+#  usage:
+#     code-agent [name]                 # worktree + OS sandbox (default)
+#     SANDBOX=docker code-agent [name]  # container: real boundary, for unattended runs
+#     SANDBOX=none   code-agent [name]  # bare (permission prompts only)
+#
+#  A git WORKTREE keeps the agent's code changes on a throwaway branch you can
+#  delete. The SANDBOX layer is what contains a rogue/injected command:
+#     os     -> writes limited to the worktree (+ /tmp); network allowed
+#               (the agent must reach the gateway + your primary)
+#     docker -> writes + network fully contained; use for "let it run" sessions
+#  Cleanup when done:  code-agent --clean <name>
+# ============================================================================
+set -euo pipefail
+
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || { echo "run inside a git repo"; exit 1; })"
+WT_ROOT="$REPO/../$(basename "$REPO")-agents"
+
+if [[ "${1:-}" == "--clean" ]]; then
+  name="${2:?usage: code-agent --clean <name>}"
+  git -C "$REPO" worktree remove --force "$WT_ROOT/$name" 2>/dev/null || true
+  git -C "$REPO" branch -D "wip/$name" 2>/dev/null || true
+  echo "cleaned $name"; exit 0
+fi
+
+NAME="${1:-agent-$(date +%H%M%S)}"
+WT="$WT_ROOT/$NAME"
+
+# load your flat-rate primary (GLM by default) if configured
+[[ -f "$KIT_DIR/config/primary.env" ]] && source "$KIT_DIR/config/primary.env"
+# hand OpenCode the gateway key for the free/frontier tiers
+[[ -f "$KIT_DIR/.env" ]] && export GATEWAY_KEY="$(grep -E '^GATEWAY_KEY=' "$KIT_DIR/.env" | cut -d= -f2-)"
+export OPENCODE_CONFIG="$KIT_DIR/opencode/opencode.json"
+
+echo "→ worktree: $WT   (branch wip/$NAME)"
+git -C "$REPO" worktree add -b "wip/$NAME" "$WT" >/dev/null
+cd "$WT"
+
+case "${SANDBOX:-os}" in
+  docker)
+    echo "→ sandbox: docker (contained fs + network)"
+    docker run --rm -it \
+      -v "$WT":/work -w /work \
+      --env ANTHROPIC_BASE_URL --env ANTHROPIC_AUTH_TOKEN --env ANTHROPIC_MODEL \
+      --env GATEWAY_KEY --env OPENCODE_CONFIG=/work/.opencode.json \
+      --add-host=host.docker.internal:host-gateway \
+      opencode-sandbox:latest opencode
+    ;;
+  os)
+    if [[ "$OSTYPE" == darwin* ]]; then
+      echo "→ sandbox: macOS Seatbelt (writes limited to worktree)"
+      exec sandbox-exec -D WT="$WT" -f "$KIT_DIR/sandbox/opencode.sb" opencode
+    elif command -v bwrap >/dev/null; then
+      echo "→ sandbox: bubblewrap (writes limited to worktree)"
+      exec bwrap --dev-bind / / --bind "$WT" "$WT" \
+        --ro-bind "$HOME/.ssh" /dev/null --ro-bind "$HOME/.aws" /dev/null \
+        opencode
+    else
+      echo "⚠ no OS sandbox available (install bubblewrap on Linux); running with permission prompts only"
+      exec opencode
+    fi
+    ;;
+  none)
+    echo "→ sandbox: none (permission prompts only)"
+    exec opencode
+    ;;
+  *) echo "unknown SANDBOX=$SANDBOX (use os|docker|none)"; exit 1 ;;
+esac

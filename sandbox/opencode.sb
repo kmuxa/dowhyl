@@ -1,0 +1,46 @@
+;; ===========================================================================
+;;  opencode.sb — macOS Seatbelt profile used by `code-agent` (os mode).
+;;  Invoked as:  sandbox-exec -D WT=<worktree-path> -f opencode.sb opencode
+;;
+;;  What it enforces:
+;;    * READS: allowed anywhere (the agent needs to read your toolchain, libs,
+;;      and repo). Optionally deny-read your secret dirs — see the block below.
+;;    * WRITES: allowed ONLY inside the worktree and /tmp. A rogue or injected
+;;      command therefore cannot modify anything outside the throwaway copy.
+;;    * NETWORK: allowed — the agent must reach the gateway (localhost:4000)
+;;      and your flat-rate primary's cloud endpoint. For network EGRESS control
+;;      (blocking exfiltration), use `SANDBOX=docker code-agent` instead, which
+;;      contains the network entirely. Seatbelt host-level allowlisting is
+;;      coarse, so we keep egress control in the Docker lane by design.
+;;
+;;  Note: Apple marks sandbox-exec deprecated (still functional in 2026).
+;; ===========================================================================
+(version 1)
+(deny default)
+
+(allow process-fork)
+(allow process-exec)
+(allow signal (target children))
+(allow sysctl-read)
+(allow mach-lookup)
+(allow ipc-posix-shm)
+
+;; reads: everywhere
+(allow file-read*)
+
+;; --- OPTIONAL hardening: block reading your secrets even from inside -------
+;; Uncomment and set your home path to stop the agent reading these at all.
+;; (deny file-read*
+;;   (subpath "/Users/YOU/.ssh")
+;;   (subpath "/Users/YOU/.aws")
+;;   (subpath "/Users/YOU/.config/gcloud"))
+
+;; writes: worktree + tmp only
+(allow file-write*
+  (subpath (param "WT"))
+  (subpath "/private/tmp")
+  (subpath "/private/var/folders")
+  (subpath "/tmp"))
+
+;; network: allowed (gateway + primary). Use docker mode for egress control.
+(allow network*)

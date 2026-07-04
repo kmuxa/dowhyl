@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "//": "Verify field names against current OpenCode docs — the schema evolves. This wires (1) the local gateway as a provider exposing the tier aliases, (2) the Playwright browser loop via MCP, (3) plan->smart / build->mid model mapping.",
+
+  "provider": {
+    "gateway": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Gateway (LiteLLM)",
+      "options": {
+        "baseURL": "http://localhost:4000/v1",
+        "apiKey": "{env:GATEWAY_KEY}"
+      },
+      "models": {
+        "frontier": { "name": "frontier (Opus/GPT-5.5 — brutal 5%)" },
+        "smart":    { "name": "smart (Sonnet 5 / Qwen3-Coder / DeepSeek V4)" },
+        "mid":      { "name": "mid (gpt-oss-120b / DeepSeek Flash — free)" },
+        "long":     { "name": "long (Gemini 3 Flash 1M ctx — free)" },
+        "cheap":    { "name": "cheap (Flash-Lite / Llama-8B — free)" }
+      }
+    }
+  },
+
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "enabled": true
+    }
+  },
+
+  "agent": {
+    "plan":  { "model": "gateway/smart", "mode": "primary" },
+    "build": { "model": "gateway/mid",   "mode": "primary" }
+  },
+
+  "//model": "Your flat-rate PRIMARY (GLM by default) is picked up from config/primary.env via the ANTHROPIC_* env vars and appears as the built-in anthropic provider. Switch with the /models picker in OpenCode, or set a default here."
+}

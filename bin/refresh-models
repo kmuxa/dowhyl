@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  refresh-models — catalog-drift alert.
+#  Queries live model lists (OpenRouter, NVIDIA, Gemini) and flags any model
+#  referenced in config/litellm.yaml that is no longer offered, so a silent
+#  deletion doesn't strand a lane. It does NOT edit your config (safer) — it
+#  writes a report to var/model-drift.log and prints a summary.
+#
+#  Schedule it (macOS launchd or cron). Example cron (daily 07:00):
+#     0 7 * * *  /path/to/agentic-coding-kit/bin/refresh-models
+#
+#  Endpoints occasionally change — if a check errors, verify the URL in docs.
+# ============================================================================
+set -uo pipefail
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ -f "$KIT_DIR/.env" ]] && set -a && . "$KIT_DIR/.env" && set +a
+LOG="$KIT_DIR/var/model-drift.log"
+command -v jq >/dev/null || { echo "install jq"; exit 1; }
+
+live=$(mktemp)
+
+# OpenRouter (no key needed to list)
+curl -fsS https://openrouter.ai/api/v1/models 2>/dev/null \
+  | jq -r '.data[].id' >> "$live" || echo "  (openrouter list failed)"
+
+# NVIDIA Build
+[[ -n "${NVIDIA_API_KEY:-}" ]] && curl -fsS https://integrate.api.nvidia.com/v1/models \
+  -H "Authorization: Bearer $NVIDIA_API_KEY" 2>/dev/null \
+  | jq -r '.data[].id' >> "$live" || true
+
+# Gemini
+[[ -n "${GEMINI_API_KEY:-}" ]] && curl -fsS \
+  "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY" 2>/dev/null \
+  | jq -r '.models[].name' | sed 's#models/##' >> "$live" || true
+
+# models referenced in the gateway config (strip provider prefixes)
+configured=$(grep -oE 'model: [a-z_]+/[A-Za-z0-9._/-]+' "$KIT_DIR/config/litellm.yaml" \
+  | sed 's/^model: //' | awk -F/ '{print $NF}' | sort -u)
+
+echo "==== $(date '+%F %T') model-drift check ====" | tee -a "$LOG"
+missing=0
+while read -r m; do
+  [[ -z "$m" ]] && continue
+  if grep -qi -- "$m" "$live"; then
+    :
+  else
+    echo "  ⚠ not found on live provider lists: $m" | tee -a "$LOG"
+    missing=$((missing+1))
+  fi
+done <<< "$configured"
+
+if [[ "$missing" -eq 0 ]]; then
+  echo "  ✓ all configured models still listed" | tee -a "$LOG"
+else
+  echo "  → $missing model(s) may have been renamed/removed; update config/litellm.yaml (fallbacks cover you meanwhile)." | tee -a "$LOG"
+fi
+rm -f "$live"

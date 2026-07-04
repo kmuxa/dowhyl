@@ -1,0 +1,31 @@
+# Redis (cache + shared cooldown/budget state) + LiteLLM gateway.
+# Start with:  docker compose up -d   (setup.sh does this for you)
+services:
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  litellm:
+    # Pin >= 1.84.0 (the March-2026 1.82.7/1.82.8 builds had a supply-chain issue).
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file: .env
+    ports: ["4000:4000"]
+    volumes:
+      - ./config/litellm.yaml:/app/config.yaml:ro
+      - ./guardrails:/app/guardrails:ro      # custom secret-scan guardrail
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/health/liveliness"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

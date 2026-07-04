@@ -1,0 +1,71 @@
+# ============================================================================
+#  LiteLLM gateway — tiered aliases + fallback + cooldown + cache + $ cap.
+#  This is a WORKING DEFAULT SUBSET. For the full best-first catalog of every
+#  coding model per tier, see the companion doc and uncomment what you want.
+#
+#  A lane whose API key is blank in .env simply won't be reachable; the
+#  fallback chains route around it, so this file is safe to ship as-is.
+#  drop_params:true lets Anthropic-style params pass to OpenAI-style backends.
+# ============================================================================
+
+model_list:
+  # ---- frontier: the brutal ~5% (only used if you set the paid keys) -------
+  - {model_name: frontier, litellm_params: {model: anthropic/claude-opus-4-8, api_key: os.environ/ANTHROPIC_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: openai/gpt-5.5,             api_key: os.environ/OPENAI_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: anthropic/claude-sonnet-5,  api_key: os.environ/ANTHROPIC_API_KEY}}
+
+  # ---- smart: real coding (planning, hard debugging) -----------------------
+  - {model_name: smart, litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3-coder-480b, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: deepseek/deepseek-v4-pro, api_key: os.environ/DEEPSEEK_API_KEY}}
+
+  # ---- mid: routine implementation (free workhorse; gpt-oss dual-homed) ----
+  - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b, api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  drop_params: true}}
+  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY, rpm: 30, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: gemini/gemini-3-flash, api_key: os.environ/GEMINI_API_KEY}}
+
+  # ---- long: huge-context reads (free; do NOT send secrets here) -----------
+  - {model_name: long, litellm_params: {model: gemini/gemini-3-flash, api_key: os.environ/GEMINI_API_KEY}}
+
+  # ---- cheap/fast: commits, summaries, classification, the router itself ---
+  - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite, api_key: os.environ/GEMINI_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: groq/llama-3.1-8b-instant,   api_key: os.environ/GROQ_API_KEY}}
+
+  # ---- overflow: cheapest paid, tried before frontier ----------------------
+  - {model_name: overflow, litellm_params: {model: deepseek/deepseek-v4-flash, api_key: os.environ/DEEPSEEK_API_KEY}}
+
+router_settings:
+  routing_strategy: latency-based-routing   # fastest healthy deployment for interactive turns
+  allowed_fails: 2                           # 2 fails/min -> cooldown
+  cooldown_time: 60                          # seconds benched, then auto-retried (reads Retry-After)
+  enable_pre_call_checks: true               # skip deployments already over rpm/tpm
+  redis_host: os.environ/REDIS_HOST
+  redis_port: os.environ/REDIS_PORT
+  fallbacks:
+    - {frontier: [smart]}
+    - {smart:    [mid, overflow]}
+    - {mid:      [long, cheap, overflow]}
+    - {long:     [mid]}
+
+litellm_settings:
+  num_retries: 2
+  request_timeout: 120
+  turn_off_message_logging: true             # privacy: don't log prompt/response bodies
+  cache: true
+  cache_params: {type: redis, host: os.environ/REDIS_HOST, port: os.environ/REDIS_PORT, ttl: 3600}
+  # callbacks: ["langfuse"]                   # uncomment + set LANGFUSE_* keys for observability
+
+# --- secret-scan guardrail (fail-closed: blocks secrets from leaving) -------
+# If your LiteLLM version loads guardrails differently, see guardrails/secret_scan.py
+# header for the alternate registration and the current LiteLLM guardrail docs.
+guardrails:
+  - guardrail_name: "secret-scan"
+    litellm_params:
+      guardrail: guardrails.secret_scan.SecretScanGuardrail
+      mode: "pre_call"
+      default_on: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  fail_closed_budget_enforcement: true       # the $10/mo cap is a HARD ceiling
