@@ -16,7 +16,7 @@ model_list:
 
   # ---- smart: real coding (planning, hard debugging) -----------------------
   - {model_name: smart, litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3-coder-480b, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3-coder-480b-a35b-instruct, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: smart, litellm_params: {model: deepseek/deepseek-v4-pro, api_key: os.environ/DEEPSEEK_API_KEY}}
 
   # ---- mid: routine implementation (free workhorse; gpt-oss dual-homed) ----
@@ -30,7 +30,7 @@ model_list:
 
   # ---- cheap/fast: commits, summaries, classification, the router itself ---
   - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite, api_key: os.environ/GEMINI_API_KEY}}
-  - {model_name: cheap, litellm_params: {model: groq/llama-3.1-8b-instant,   api_key: os.environ/GROQ_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY}}
 
   # ---- overflow: cheapest paid, tried before frontier ----------------------
   - {model_name: overflow, litellm_params: {model: deepseek/deepseek-v4-flash, api_key: os.environ/DEEPSEEK_API_KEY}}
