@@ -1,38 +1,61 @@
 # ============================================================================
 #  LiteLLM gateway — tiered aliases + fallback + cooldown + cache + $ cap.
-#  This is a WORKING DEFAULT SUBSET. For the full best-first catalog of every
-#  coding model per tier, see the companion doc and uncomment what you want.
+#  This is a WORKING DEFAULT SUBSET. Lanes below mix paid frontier models 
+#  with the best FREE models hosted on NVIDIA Build (no-train), ordered best -> least. 
+#  A lane whose API key is
+#  blank in .env is simply skipped; fallback chains route around it.
 #
 #  A lane whose API key is blank in .env simply won't be reachable; the
 #  fallback chains route around it, so this file is safe to ship as-is.
+#  After editing model ids, run  ./bin/refresh-models  to confirm each id is
+#  live for your key (and  --fix  to auto-correct), then restart the gateway.
 #  drop_params:true lets Anthropic-style params pass to OpenAI-style backends.
 # ============================================================================
 
 model_list:
-  # ---- frontier: the brutal ~5% (only used if you set the paid keys) -------
+  # ---- frontier: the brutal ~5% (paid, $-capped). The top ones are only used if 
+  # ---- you set the paid keys. No free model beats these;
+  # ---- the two free entries are bottom-of-chain resilience only.
   - {model_name: frontier, litellm_params: {model: anthropic/claude-opus-4-8, api_key: os.environ/ANTHROPIC_API_KEY}}
-  - {model_name: frontier, litellm_params: {model: openai/gpt-5.5,             api_key: os.environ/OPENAI_API_KEY}}
-  - {model_name: frontier, litellm_params: {model: anthropic/claude-sonnet-5,  api_key: os.environ/ANTHROPIC_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: openai/gpt-5.5,            api_key: os.environ/OPENAI_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: frontier, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
-  # ---- smart: real coding (planning, hard debugging) -----------------------
-  - {model_name: smart, litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3-coder-480b-a35b-instruct, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: smart, litellm_params: {model: deepseek/deepseek-v4-pro, api_key: os.environ/DEEPSEEK_API_KEY}}
+  # ---- smart: real coding — (planning, hard debugging) paid Sonnet on top, then the 5 best FREE NVIDIA coders ----
+  - {model_name: smart, litellm_params: {model: anthropic/claude-sonnet-5,               api_key: os.environ/ANTHROPIC_API_KEY}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,                 api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-pro,  api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3.5-397b-a17b,       api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/minimaxai/minimax-m3,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
-  # ---- mid: routine implementation (free workhorse; gpt-oss dual-homed) ----
-  - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b, api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  drop_params: true}}
+  # ---- mid: routine implementation (free workhorse; gpt-oss dual-homed) 
+  # ---— fast dual-homed gpt-oss on top, then strong FREE NVIDIA coders ----
+  - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b,    api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  drop_params: true}}
   - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY, rpm: 30, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: gemini/gemini-3-flash, api_key: os.environ/GEMINI_API_KEY}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-flash,            api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/minimaxai/minimax-m2.7,                   api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/qwen/qwen3-next-80b-a3b-instruct,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/nvidia/llama-3.3-nemotron-super-49b-v1.5, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: gemini/gemini-3.5-flash, api_key: os.environ/GEMINI_API_KEY}}
 
-  # ---- long: huge-context reads (free; do NOT send secrets here) -----------
-  - {model_name: long, litellm_params: {model: gemini/gemini-3-flash, api_key: os.environ/GEMINI_API_KEY}}
+  # ---- long: huge-context reads (free; do NOT send secrets here) 
+  # ---— fast Gemini on top, then FREE 1M-ctx NVIDIA reasoners ----
+  - {model_name: long, litellm_params: {model: gemini/gemini-3.5-flash,         api_key: os.environ/GEMINI_API_KEY}}
+  - {model_name: long, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: long, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: long, litellm_params: {model: nvidia_nim/qwen/qwen3.5-397b-a17b, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: long, litellm_params: {model: nvidia_nim/minimaxai/minimax-m3, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
-  # ---- cheap/fast: commits, summaries, classification, the router itself ---
-  - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite, api_key: os.environ/GEMINI_API_KEY}}
-  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY}}
+  # ---- cheap: trivial/fast — Gemini Flash-Lite + Groq win here; NVIDIA = fallback depth ----
+  - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite,  api_key: os.environ/GEMINI_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b,       api_key: os.environ/GROQ_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: nvidia_nim/openai/gpt-oss-20b, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: cheap, litellm_params: {model: nvidia_nim/nvidia/nemotron-3-nano-30b-a3b,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: cheap, litellm_params: {model: nvidia_nim/mistralai/ministral-14b-instruct-2512, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
-  # ---- overflow: cheapest paid, tried before frontier ----------------------
+  # ---- overflow: cheapest paid before frontier (optional; NVIDIA free now covers most) ----
   - {model_name: overflow, litellm_params: {model: deepseek/deepseek-v4-flash, api_key: os.environ/DEEPSEEK_API_KEY}}
 
 router_settings:
@@ -56,9 +79,6 @@ litellm_settings:
   cache_params: {type: redis, host: os.environ/REDIS_HOST, port: os.environ/REDIS_PORT, ttl: 3600}
   # callbacks: ["langfuse"]                   # uncomment + set LANGFUSE_* keys for observability
 
-# --- secret-scan guardrail (fail-closed: blocks secrets from leaving) -------
-# If your LiteLLM version loads guardrails differently, see guardrails/secret_scan.py
-# header for the alternate registration and the current LiteLLM guardrail docs.
 guardrails:
   - guardrail_name: "secret-scan"
     litellm_params:
