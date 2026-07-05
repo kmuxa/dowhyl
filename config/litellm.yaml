@@ -1,68 +1,84 @@
 # ============================================================================
 #  LiteLLM gateway — tiered aliases + fallback + cooldown + cache + $ cap.
-#  This is a WORKING DEFAULT SUBSET. Lanes below mix paid frontier models 
-#  with the best FREE models hosted on NVIDIA Build (no-train), ordered best -> least. 
-#  A lane whose API key is
-#  blank in .env is simply skipped; fallback chains route around it.
+#  Every lane mixes >=5 providers (max 5 models per provider per lane),
+#  ordered best-first. Lanes whose API key is blank in .env are simply
+#  skipped; fallback chains route around them.
 #
-#  A lane whose API key is blank in .env simply won't be reachable; the
-#  fallback chains route around it, so this file is safe to ship as-is.
-#  After editing model ids, run  ./bin/refresh-models  to confirm each id is
-#  live for your key (and  --fix  to auto-correct), then restart the gateway.
-#  drop_params:true lets Anthropic-style params pass to OpenAI-style backends.
+#  SIZE GUARDS (the Groq/Cerebras 400/413 fix): free tiers there have tiny
+#  per-minute token budgets, so each deployment declares its real budget via
+#  tpm + model_info.max_input_tokens. With enable_pre_call_checks, the router
+#  skips them for oversized turns BEFORE calling — no failed calls, no stalls.
+#  Check each provider's limits page for YOUR account's numbers and adjust.
+#
+#  PRIVACY: [trains] = provider may train on inputs (xai data-share, gemini
+#  free, some openrouter :free hosts) — keep sensitive repos on NVIDIA/paid.
+#
+#  After edits:  ./bin/refresh-models  (add --fix to auto-correct ids), then
+#  docker compose restart litellm.   OpenRouter ids are validated key-free;
+#  sambanova/cloudflare/xai show "?" until keys are added.
 # ============================================================================
 
 model_list:
-  # ---- frontier: the brutal ~5% (paid, $-capped). The top ones are only used if 
-  # ---- you set the paid keys. No free model beats these;
-  # ---- the two free entries are bottom-of-chain resilience only.
+  # ---- frontier: the brutal ~5% (paid on top, capped; free tail = resilience) ----
   - {model_name: frontier, litellm_params: {model: anthropic/claude-opus-4-8, api_key: os.environ/ANTHROPIC_API_KEY}}
   - {model_name: frontier, litellm_params: {model: openai/gpt-5.5,            api_key: os.environ/OPENAI_API_KEY}}
   - {model_name: frontier, litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}}
-  - {model_name: frontier, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: frontier, litellm_params: {model: xai/grok-4,                api_key: os.environ/XAI_API_KEY}}   # $25 signup credits; +$150/mo with data-share opt-in [trains]
+  - {model_name: frontier, litellm_params: {model: openrouter/qwen/qwen3-coder:free, api_key: os.environ/OPENROUTER_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: frontier, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
-  # ---- smart: real coding — (planning, hard debugging) paid Sonnet on top, then the 5 best FREE NVIDIA coders ----
-  - {model_name: smart, litellm_params: {model: anthropic/claude-sonnet-5,               api_key: os.environ/ANTHROPIC_API_KEY}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,                 api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-pro,  api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3.5-397b-a17b,       api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: smart, litellm_params: {model: nvidia_nim/minimaxai/minimax-m3,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  # ---- smart: real coding (planning, hard debugging) ----
+  - {model_name: smart, litellm_params: {model: anthropic/claude-sonnet-5,              api_key: os.environ/ANTHROPIC_API_KEY}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,                api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: openrouter/qwen/qwen3-coder:free,       api_key: os.environ/OPENROUTER_API_KEY}}   # strongest free coder, big ctx
+  - {model_name: smart, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-pro, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: xai/grok-4,                             api_key: os.environ/XAI_API_KEY}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3.5-397b-a17b,      api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: nvidia_nim/minimaxai/minimax-m3,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: smart, litellm_params: {model: deepseek/deepseek-v4-pro,               api_key: os.environ/DEEPSEEK_API_KEY}}     # cheapest strong paid
 
-  # ---- mid: routine implementation (free workhorse; gpt-oss dual-homed) 
-  # ---— fast dual-homed gpt-oss on top, then strong FREE NVIDIA coders ----
-  - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b,    api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  drop_params: true}}
-  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY, rpm: 30, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-flash,            api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: nvidia_nim/minimaxai/minimax-m2.7,                   api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: nvidia_nim/qwen/qwen3-next-80b-a3b-instruct,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  # ---- mid: routine implementation (the workhorse) ----
+  - {model_name: mid, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-flash, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: openrouter/qwen/qwen3-coder:free,         api_key: os.environ/OPENROUTER_API_KEY}}   # heavy turns, free, big ctx
+  - {model_name: mid, litellm_params: {model: gemini/gemini-3.5-flash,                  api_key: os.environ/GEMINI_API_KEY}}       # ~1500 req/day, fast [trains]
+  # size-guarded fast small-turn lanes (the fix): adjust to YOUR published limits
+  - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b,    api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  tpm: 30000, drop_params: true}, model_info: {max_input_tokens: 24000}}
+  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY,     rpm: 30, tpm: 6000,  drop_params: true}, model_info: {max_input_tokens: 5000}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/minimaxai/minimax-m2.7,               api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: nvidia_nim/qwen/qwen3-next-80b-a3b-instruct,     api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: mid, litellm_params: {model: openrouter/openai/gpt-oss-120b:free,             api_key: os.environ/OPENROUTER_API_KEY}}
+  - {model_name: mid, litellm_params: {model: sambanova/Meta-Llama-3.3-70B-Instruct,           api_key: os.environ/SAMBANOVA_API_KEY}}   # fast third home ($5 credit)
   - {model_name: mid, litellm_params: {model: nvidia_nim/nvidia/llama-3.3-nemotron-super-49b-v1.5, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: gemini/gemini-3.5-flash, api_key: os.environ/GEMINI_API_KEY}}
 
-  # ---- long: huge-context reads (free; do NOT send secrets here) 
-  # ---— fast Gemini on top, then FREE 1M-ctx NVIDIA reasoners ----
-  - {model_name: long, litellm_params: {model: gemini/gemini-3.5-flash,         api_key: os.environ/GEMINI_API_KEY}}
-  - {model_name: long, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: long, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  # ---- long: huge-context reads (NOT for secrets) ----
+  - {model_name: long, litellm_params: {model: gemini/gemini-3.5-flash,           api_key: os.environ/GEMINI_API_KEY}}          # 1M ctx [trains]
+  - {model_name: long, litellm_params: {model: openrouter/qwen/qwen3-coder:free,  api_key: os.environ/OPENROUTER_API_KEY}}      # 1M ctx free
+  - {model_name: long, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6,   api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: long, litellm_params: {model: xai/grok-4.1-fast,                 api_key: os.environ/XAI_API_KEY}}             # 2M ctx [trains w/ credits opt-in]
+  - {model_name: long, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,           api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: long, litellm_params: {model: nvidia_nim/qwen/qwen3.5-397b-a17b, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: long, litellm_params: {model: nvidia_nim/minimaxai/minimax-m3, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: long, litellm_params: {model: nvidia_nim/minimaxai/minimax-m3,   api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: long, litellm_params: {model: deepseek/deepseek-v4-flash,        api_key: os.environ/DEEPSEEK_API_KEY}}        # paid-cheap tail
 
-  # ---- cheap: trivial/fast — Gemini Flash-Lite + Groq win here; NVIDIA = fallback depth ----
-  - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite,  api_key: os.environ/GEMINI_API_KEY}}
-  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b,       api_key: os.environ/GROQ_API_KEY}}
-  - {model_name: cheap, litellm_params: {model: nvidia_nim/openai/gpt-oss-20b, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: cheap, litellm_params: {model: nvidia_nim/nvidia/nemotron-3-nano-30b-a3b,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  # ---- cheap: commits, summaries, classification (fast + high-volume) ----
+  - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite, api_key: os.environ/GEMINI_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY, tpm: 6000, drop_params: true}, model_info: {max_input_tokens: 5000}}
+  - {model_name: cheap, litellm_params: {model: nvidia_nim/openai/gpt-oss-20b,                 api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
+  - {model_name: cheap, litellm_params: {model: cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast, api_key: os.environ/CLOUDFLARE_API_KEY}}   # 10k neurons/day; needs CLOUDFLARE_ACCOUNT_ID
+  - {model_name: cheap, litellm_params: {model: openrouter/meta-llama/llama-3.3-70b-instruct:free,   api_key: os.environ/OPENROUTER_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: nvidia_nim/nvidia/nemotron-3-nano-30b-a3b,     api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: cheap, litellm_params: {model: nvidia_nim/mistralai/ministral-14b-instruct-2512, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
-  # ---- overflow: cheapest paid before frontier (optional; NVIDIA free now covers most) ----
+  # ---- overflow: cheapest paid, tried before frontier (deliberately minimal) ----
   - {model_name: overflow, litellm_params: {model: deepseek/deepseek-v4-flash, api_key: os.environ/DEEPSEEK_API_KEY}}
 
 router_settings:
-  routing_strategy: latency-based-routing   # fastest healthy deployment for interactive turns
-  allowed_fails: 2                           # 2 fails/min -> cooldown
-  cooldown_time: 60                          # seconds benched, then auto-retried (reads Retry-After)
-  enable_pre_call_checks: true               # skip deployments already over rpm/tpm
+  routing_strategy: latency-based-routing
+  allowed_fails: 2
+  cooldown_time: 60
+  enable_pre_call_checks: true     # enforces model_info.max_input_tokens + tpm/rpm BEFORE calling
   redis_host: os.environ/REDIS_HOST
   redis_port: os.environ/REDIS_PORT
   fallbacks:
@@ -74,10 +90,10 @@ router_settings:
 litellm_settings:
   num_retries: 2
   request_timeout: 120
-  turn_off_message_logging: true             # privacy: don't log prompt/response bodies
+  turn_off_message_logging: true
   cache: true
   cache_params: {type: redis, host: os.environ/REDIS_HOST, port: os.environ/REDIS_PORT, ttl: 3600}
-  # callbacks: ["langfuse"]                   # uncomment + set LANGFUSE_* keys for observability
+  # callbacks: ["langfuse"]
 
 guardrails:
   - guardrail_name: "secret-scan"
@@ -88,5 +104,5 @@ guardrails:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  database_url: os.environ/DATABASE_URL        # Postgres: enables virtual keys + budgets
-  fail_closed_budget_enforcement: true         # the $10/mo cap is a HARD ceiling
+  database_url: os.environ/DATABASE_URL
+  fail_closed_budget_enforcement: true
