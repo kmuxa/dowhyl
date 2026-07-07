@@ -24,7 +24,7 @@ model_list:
   - {model_name: frontier, litellm_params: {model: openai/gpt-5.5,            api_key: os.environ/OPENAI_API_KEY}}
   - {model_name: frontier, litellm_params: {model: anthropic/claude-sonnet-5, api_key: os.environ/ANTHROPIC_API_KEY}}
   - {model_name: frontier, litellm_params: {model: xai/grok-4,                api_key: os.environ/XAI_API_KEY}}   # $25 signup credits; +$150/mo with data-share opt-in [trains]
-  - {model_name: frontier, litellm_params: {model: openrouter/qwen/qwen3-coder:free, api_key: os.environ/OPENROUTER_API_KEY}}
+  - {model_name: frontier, litellm_params: {model: openrouter/qwen/qwen3-coder:free, api_key: os.environ/OPENROUTER_API_KEY, rpm: 15}}
   - {model_name: frontier, litellm_params: {model: cloudflare/@cf/moonshotai/kimi-k2.7-code, api_key: os.environ/CLOUDFLARE_API_KEY}}   # newest open coder; ~a few big calls/day on free neurons
   - {model_name: frontier, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,         api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: frontier, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
@@ -35,7 +35,7 @@ model_list:
   - {model_name: smart, litellm_params: {model: nvidia_nim/z-ai/glm-5.2,                api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: smart, litellm_params: {model: cloudflare/@cf/zai-org/glm-5.2,          api_key: os.environ/CLOUDFLARE_API_KEY}}  # dual-homed GLM-5.2; 262K ctx on CF
   - {model_name: smart, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6,        api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: smart, litellm_params: {model: openrouter/qwen/qwen3-coder:free,       api_key: os.environ/OPENROUTER_API_KEY}}   # strongest free coder, big ctx
+  - {model_name: smart, litellm_params: {model: openrouter/qwen/qwen3-coder:free,       api_key: os.environ/OPENROUTER_API_KEY, rpm: 15}}   # strongest free coder, big ctx
   - {model_name: smart, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-pro, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: smart, litellm_params: {model: xai/grok-4,                             api_key: os.environ/XAI_API_KEY}}
   - {model_name: smart, litellm_params: {model: nvidia_nim/qwen/qwen3.5-397b-a17b,      api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
@@ -45,23 +45,23 @@ model_list:
 
   # ---- mid: routine implementation (the workhorse) ----
   - {model_name: mid, litellm_params: {model: nvidia_nim/deepseek-ai/deepseek-v4-flash, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: openrouter/qwen/qwen3-coder:free,         api_key: os.environ/OPENROUTER_API_KEY}}   # heavy turns, free, big ctx
+  - {model_name: mid, litellm_params: {model: openrouter/qwen/qwen3-coder:free,         api_key: os.environ/OPENROUTER_API_KEY, rpm: 15}}   # heavy turns, free, big ctx
   - {model_name: mid, litellm_params: {model: gemini/gemini-3.5-flash,                  api_key: os.environ/GEMINI_API_KEY}}       # ~1500 req/day, fast [trains]
   - {model_name: mid, litellm_params: {model: sambanova/gpt-oss-120b,                   api_key: os.environ/SAMBANOVA_API_KEY}}    # 3rd home for gpt-oss (tri-homed w/ cerebras+groq); takes full-size turns
   - {model_name: mid, litellm_params: {model: cloudflare/@cf/openai/gpt-oss-120b,       api_key: os.environ/CLOUDFLARE_API_KEY}}   # 4th home — quad-homed gpt-oss; full-size turns OK (~a dozen/day free)
   # size-guarded fast small-turn lanes (the fix): adjust to YOUR published limits
   - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b,    api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  tpm: 30000, drop_params: true}, model_info: {max_input_tokens: 24000}}
-  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY,     rpm: 1000, tpm: 250000,  drop_params: true}, model_info: {max_input_tokens: 131072}}
+  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY,     rpm: 30, tpm: 6000,  drop_params: true}, model_info: {max_input_tokens: 5000}}
   - {model_name: mid, litellm_params: {model: sambanova/MiniMax-M2.7,                          api_key: os.environ/SAMBANOVA_API_KEY}}   # same weights as NVIDIA line below — dual-homed, RDU-fast
   - {model_name: mid, litellm_params: {model: nvidia_nim/minimaxai/minimax-m2.7,               api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: mid, litellm_params: {model: nvidia_nim/qwen/qwen3-next-80b-a3b-instruct,     api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
-  - {model_name: mid, litellm_params: {model: openrouter/openai/gpt-oss-120b:free,             api_key: os.environ/OPENROUTER_API_KEY}}
+  - {model_name: mid, litellm_params: {model: openrouter/openai/gpt-oss-120b:free,             api_key: os.environ/OPENROUTER_API_KEY, rpm: 15}}
   - {model_name: mid, litellm_params: {model: cloudflare/@cf/zai-org/glm-4.7-flash,     api_key: os.environ/CLOUDFLARE_API_KEY}}   # neuron-cheap free coder
   - {model_name: mid, litellm_params: {model: nvidia_nim/nvidia/llama-3.3-nemotron-super-49b-v1.5, api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
 
   # ---- long: huge-context reads (NOT for secrets) ----
   - {model_name: long, litellm_params: {model: gemini/gemini-3.5-flash,           api_key: os.environ/GEMINI_API_KEY}}          # 1M ctx [trains]
-  - {model_name: long, litellm_params: {model: openrouter/qwen/qwen3-coder:free,  api_key: os.environ/OPENROUTER_API_KEY}}      # 1M ctx free
+  - {model_name: long, litellm_params: {model: openrouter/qwen/qwen3-coder:free,  api_key: os.environ/OPENROUTER_API_KEY, rpm: 15}}      # 1M ctx free
   - {model_name: long, litellm_params: {model: nvidia_nim/moonshotai/kimi-k2.6,   api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: long, litellm_params: {model: cloudflare/@cf/moonshotai/kimi-k2.6,     api_key: os.environ/CLOUDFLARE_API_KEY}}   # dual-home; 262K ctx on CF
   - {model_name: long, litellm_params: {model: xai/grok-4.1-fast,                 api_key: os.environ/XAI_API_KEY}}             # 2M ctx [trains w/ credits opt-in]
@@ -72,11 +72,11 @@ model_list:
 
   # ---- cheap: commits, summaries, classification (fast + high-volume) ----
   - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite, api_key: os.environ/GEMINI_API_KEY}}
-  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY, rpm: 1000, tpm: 250000, drop_params: true}, model_info: {max_input_tokens: 131072}}
+  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY, tpm: 6000, drop_params: true}, model_info: {max_input_tokens: 5000}}
   - {model_name: cheap, litellm_params: {model: nvidia_nim/openai/gpt-oss-20b,                 api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: cheap, litellm_params: {model: cloudflare/@cf/openai/gpt-oss-20b,             api_key: os.environ/CLOUDFLARE_API_KEY}}   # tri-homed gpt-oss-20b (groq+nvidia+cf)
   - {model_name: cheap, litellm_params: {model: cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast, api_key: os.environ/CLOUDFLARE_API_KEY}}   # 10k neurons/day; needs CLOUDFLARE_ACCOUNT_ID
-  - {model_name: cheap, litellm_params: {model: openrouter/meta-llama/llama-3.3-70b-instruct:free,   api_key: os.environ/OPENROUTER_API_KEY}}
+  - {model_name: cheap, litellm_params: {model: openrouter/meta-llama/llama-3.3-70b-instruct:free,   api_key: os.environ/OPENROUTER_API_KEY, rpm: 15}}
   - {model_name: cheap, litellm_params: {model: sambanova/Meta-Llama-3.3-70B-Instruct,         api_key: os.environ/SAMBANOVA_API_KEY}}   # tri-homed llama-3.3-70b (OR + CF + SN), RDU-fast
   - {model_name: cheap, litellm_params: {model: cloudflare/@cf/qwen/qwen3-30b-a3b-fp8,         api_key: os.environ/CLOUDFLARE_API_KEY}}   # fast small MoE, neuron-cheap
   - {model_name: cheap, litellm_params: {model: nvidia_nim/nvidia/nemotron-3-nano-30b-a3b,     api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
