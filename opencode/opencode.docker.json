@@ -1,8 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-
-  "//": "Baked into the opencode-sandbox image. Identical to ../opencode/opencode.json except the gateway base URL uses host.docker.internal (inside a container, localhost is the container, not your Mac).",
-
   "provider": {
     "gateway": {
       "npm": "@ai-sdk/openai-compatible",
@@ -12,25 +9,47 @@
         "apiKey": "{env:GATEWAY_KEY}"
       },
       "models": {
-        "frontier": { "name": "frontier (Opus/GPT-5.5 — brutal 5%)" },
-        "smart":    { "name": "smart (Sonnet 5 / Qwen3-Coder / DeepSeek V4)" },
-        "mid":      { "name": "mid (gpt-oss-120b / DeepSeek Flash — free)" },
-        "long":     { "name": "long (Gemini 3 Flash 1M ctx — free)" },
-        "cheap":    { "name": "cheap (Flash-Lite / Llama-8B — free)" }
+        "frontier": {
+          "name": "frontier (Opus/GPT-5.5 — brutal 5%)"
+        },
+        "smart": {
+          "name": "smart (Sonnet 5 / Qwen3-Coder / DeepSeek V4)"
+        },
+        "mid": {
+          "name": "mid (gpt-oss-120b / DeepSeek Flash — free)"
+        },
+        "long": {
+          "name": "long (Gemini 3 Flash 1M ctx — free)"
+        },
+        "cheap": {
+          "name": "cheap (Flash-Lite / Llama-8B — free)"
+        },
+        "overflow": {
+          "name": "overflow (DeepSeek V4 Flash — cheapest paid fallback)"
+        }
       }
     }
   },
-
   "mcp": {
     "playwright": {
       "type": "local",
-      "command": ["npx", "-y", "@playwright/mcp@latest", "--headless"],
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest",
+        "--headless"
+      ],
       "enabled": true
     }
   },
-
   "agent": {
-    "plan":  { "model": "gateway/smart", "mode": "primary" },
-    "build": { "model": "gateway/mid",   "mode": "primary" }
+    "plan": {
+      "model": "gateway/smart",
+      "mode": "primary"
+    },
+    "build": {
+      "model": "gateway/mid",
+      "mode": "primary"
+    }
   }
 }

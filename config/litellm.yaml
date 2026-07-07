@@ -51,7 +51,7 @@ model_list:
   - {model_name: mid, litellm_params: {model: cloudflare/@cf/openai/gpt-oss-120b,       api_key: os.environ/CLOUDFLARE_API_KEY}}   # 4th home — quad-homed gpt-oss; full-size turns OK (~a dozen/day free)
   # size-guarded fast small-turn lanes (the fix): adjust to YOUR published limits
   - {model_name: mid, litellm_params: {model: cerebras/gpt-oss-120b,    api_key: os.environ/CEREBRAS_API_KEY, rpm: 5,  tpm: 30000, drop_params: true}, model_info: {max_input_tokens: 24000}}
-  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY,     rpm: 30, tpm: 6000,  drop_params: true}, model_info: {max_input_tokens: 5000}}
+  - {model_name: mid, litellm_params: {model: groq/openai/gpt-oss-120b, api_key: os.environ/GROQ_API_KEY,     rpm: 1000, tpm: 250000,  drop_params: true}, model_info: {max_input_tokens: 131072}}
   - {model_name: mid, litellm_params: {model: sambanova/MiniMax-M2.7,                          api_key: os.environ/SAMBANOVA_API_KEY}}   # same weights as NVIDIA line below — dual-homed, RDU-fast
   - {model_name: mid, litellm_params: {model: nvidia_nim/minimaxai/minimax-m2.7,               api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: mid, litellm_params: {model: nvidia_nim/qwen/qwen3-next-80b-a3b-instruct,     api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
@@ -72,7 +72,7 @@ model_list:
 
   # ---- cheap: commits, summaries, classification (fast + high-volume) ----
   - {model_name: cheap, litellm_params: {model: gemini/gemini-3.1-flash-lite, api_key: os.environ/GEMINI_API_KEY}}
-  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY, tpm: 6000, drop_params: true}, model_info: {max_input_tokens: 5000}}
+  - {model_name: cheap, litellm_params: {model: groq/openai/gpt-oss-20b, api_key: os.environ/GROQ_API_KEY, rpm: 1000, tpm: 250000, drop_params: true}, model_info: {max_input_tokens: 131072}}
   - {model_name: cheap, litellm_params: {model: nvidia_nim/openai/gpt-oss-20b,                 api_key: os.environ/NVIDIA_API_KEY, drop_params: true}}
   - {model_name: cheap, litellm_params: {model: cloudflare/@cf/openai/gpt-oss-20b,             api_key: os.environ/CLOUDFLARE_API_KEY}}   # tri-homed gpt-oss-20b (groq+nvidia+cf)
   - {model_name: cheap, litellm_params: {model: cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast, api_key: os.environ/CLOUDFLARE_API_KEY}}   # 10k neurons/day; needs CLOUDFLARE_ACCOUNT_ID

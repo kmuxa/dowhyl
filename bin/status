@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# status — gateway health, remaining $ budget, tier->model roles, active lanes, primary.
+# status — gateway health, remaining $ budget, tier→model roles, provider keys
+# (derived live from config/litellm.yaml so new lanes appear automatically), primary.
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$KIT_DIR/.env" ]] && set -a && . "$KIT_DIR/.env" && set +a
@@ -7,7 +8,7 @@ CFG="$KIT_DIR/config/litellm.yaml"
 
 echo "gateway:"
 if curl -fsS http://localhost:4000/health/liveliness >/dev/null 2>&1; then
-  echo "  ✓ up (http://localhost:4000)  — call it at /v1/chat/completions"
+  echo "  ✓ up (http://localhost:4000) — chat: /v1/chat/completions · embeddings: /v1/embeddings"
 else
   echo "  ✗ down — run:  docker compose up -d"; exit 0
 fi
@@ -20,21 +21,29 @@ if [[ -n "${GATEWAY_KEY:-}" ]]; then
 fi
 
 echo "tiers → models  (config/litellm.yaml):"
-for tier in frontier smart mid long cheap overflow; do
-  models=$(grep -E "model_name: ${tier}," "$CFG" 2>/dev/null | grep -oE 'model: [a-z_]+/[^,} ]+' | sed 's/model: //')
+for tier in frontier smart mid long cheap embed overflow; do
+  models=$(grep -E "model_name: ${tier}," "$CFG" 2>/dev/null | grep -oE 'model: [^,} ]+' | sed 's/model: //')
   [[ -z "$models" ]] && continue
   echo "  ${tier}:"
   echo "$models" | sed 's/^/    - /'
 done
 
-echo "active lanes (API keys present in .env):"
-for pair in "NVIDIA_API_KEY:nvidia [no-train]" "GEMINI_API_KEY:gemini (free) [trains]" \
-            "GROQ_API_KEY:groq" "CEREBRAS_API_KEY:cerebras" "OPENROUTER_API_KEY:openrouter" \
-            "DEEPSEEK_API_KEY:deepseek (overflow)" "ANTHROPIC_API_KEY:anthropic (frontier) [no-train]" \
-            "OPENAI_API_KEY:openai (frontier) [no-train]"; do
-  var="${pair%%:*}"; label="${pair##*:}"
-  [[ -n "${!var:-}" ]] && echo "  ✓ $label"
-done
+echo "providers (derived from config — key present in .env?):"
+while read -r prefix var; do
+  [[ -z "$prefix" ]] && continue
+  lanes=$(grep -E "model: ${prefix}/" "$CFG" | grep -oE 'model_name: [a-z]+' | sed 's/model_name: //' | sort -u | paste -sd, -)
+  if [[ -n "${!var:-}" ]]; then
+    echo "  ✓ $prefix  ($var set · serves: $lanes)"
+  else
+    echo "  ✗ $prefix  ($var missing · skipped lanes: $lanes)"
+  fi
+done < <(grep -oE 'model: [a-z_]+/[^,}]+,[[:space:]]*api_key: os\.environ/[A-Z_]+' "$CFG" \
+         | sed -E 's|model: ([a-z_]+)/.*os\.environ/([A-Z_]+)|\1 \2|' | sort -u)
+
+# cloudflare needs BOTH values
+if [[ -n "${CLOUDFLARE_API_KEY:-}" && -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+  echo "  ! cloudflare: CLOUDFLARE_API_KEY is set but CLOUDFLARE_ACCOUNT_ID is MISSING — all @cf calls fail until you add it (hex id in your dashboard URL), then: docker compose up -d --force-recreate litellm"
+fi
 
 echo "flat-rate primary  (config/primary.env, used directly by OpenCode):"
 if [[ -f "$KIT_DIR/config/primary.env" ]] && ! grep -q 'paste-your' "$KIT_DIR/config/primary.env"; then
