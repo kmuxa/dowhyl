@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  code-agent — launch OpenCode on an isolated copy of your repo.
+#  code-agent — launch a coding agent on an isolated copy of your repo.
 #
 #  usage:
-#     code-agent [name]                 # worktree + OS sandbox (default)
-#     SANDBOX=docker code-agent         # container: strong fs/process isolation
-#     SANDBOX=none   code-agent [name]  # bare (permission prompts only)
-#     code-agent --clean <name>         # remove a finished worktree + branch
+#     code-agent [name]                      # OpenCode (default), worktree + OS sandbox
+#     AGENT=claude code-agent [name]         # Claude Code as the cockpit
+#     AGENT=codex  code-agent [name]         # Codex CLI as the cockpit
+#     SANDBOX=docker code-agent              # container isolation (opencode image only)
+#     SANDBOX=none  code-agent [name]        # permission prompts only
+#     SAFE=1 code-agent [name]               # sensitive repo: no CN primary, gateway lanes only
+#     code-agent --clean <name>              # remove a finished worktree + branch
 #
-#  os/none : the agent works in a throwaway git WORKTREE (separate branch+dir).
-#            The OS sandbox limits writes to that worktree; network stays open
-#            (the agent must reach the gateway + your primary).
-#  docker  : your repo is mounted at /work inside a container; nothing else on
-#            your Mac is reachable. Use for "let it run" / unattended sessions.
-#            (Filesystem/process isolation; network open for gateway+models.)
+#  Cockpits are swappable because the gateway speaks both protocols:
+#    opencode -> gateway via OpenAI-compatible /v1  (opencode/opencode.json)
+#    claude   -> your primary (primary.env) if set; else the gateway tiers via
+#                the Anthropic /v1/messages endpoint. Force tiers: BACKEND=gateway
+#    codex    -> gateway via /v1 chat (one-time ~/.codex/config.toml, see README)
 # ============================================================================
 set -euo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "run inside a git repo"; exit 1; }
 WT_ROOT="$REPO/../$(basename "$REPO")-agents"
+AGENT="${AGENT:-opencode}"
 
 # load your flat-rate primary (GLM by default) + the gateway key
 [[ -f "$KIT_DIR/config/primary.env" ]] && source "$KIT_DIR/config/primary.env"
@@ -28,7 +31,7 @@ if [[ "${ANTHROPIC_AUTH_TOKEN:-}" == *paste-your* ]]; then
   unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL
 fi
 # SAFE=1: sensitive repo — don't load the flat-rate primary (often China-hosted);
-# use only the no-train gateway lanes (route to 'frontier'/NVIDIA in OpenCode).
+# use only the no-train gateway lanes (route to 'frontier'/NVIDIA in the agent).
 if [[ "${SAFE:-}" == "1" ]]; then
   unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL
   echo "→ SAFE mode: primary disabled; use no-train lanes (frontier / NVIDIA) only"
@@ -43,10 +46,37 @@ if [[ "${1:-}" == "--clean" ]]; then
   echo "cleaned $name"; exit 0
 fi
 
+# ---- cockpit selection ------------------------------------------------------
+case "$AGENT" in
+  opencode)
+    export OPENCODE_CONFIG="$KIT_DIR/opencode/opencode.json"
+    AGENT_BIN=opencode ;;
+  claude)
+    command -v claude >/dev/null || { echo "install Claude Code first: npm i -g @anthropic-ai/claude-code"; exit 1; }
+    if [[ "${BACKEND:-auto}" == "gateway" || -z "${ANTHROPIC_BASE_URL:-}" ]]; then
+      export ANTHROPIC_BASE_URL="http://localhost:4000"          # bare host:port (LiteLLM serves /v1/messages)
+      export ANTHROPIC_AUTH_TOKEN="${GATEWAY_KEY:?GATEWAY_KEY missing in .env}"
+      export ANTHROPIC_MODEL="smart" ANTHROPIC_SMALL_FAST_MODEL="cheap"
+      export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1        # tiers appear in /model picker
+      echo "→ Claude Code → gateway tiers (smart/cheap default; /model to switch)"
+    else
+      echo "→ Claude Code → flat-rate primary (${ANTHROPIC_MODEL:-?}); BACKEND=gateway for tiers"
+    fi
+    export ANTHROPIC_API_KEY=""                                  # never fall back to Anthropic auth
+    AGENT_BIN=claude ;;
+  codex)
+    command -v codex >/dev/null || { echo "install Codex CLI first: npm i -g @openai/codex"; exit 1; }
+    export OPENAI_API_KEY="${GATEWAY_KEY:?GATEWAY_KEY missing in .env}"
+    echo "→ Codex → gateway (needs one-time ~/.codex/config.toml 'kit' provider; run: codex --profile kit)"
+    AGENT_BIN=codex ;;
+  *) echo "unknown AGENT=$AGENT (use opencode|claude|codex)"; exit 1 ;;
+esac
+
 MODE="${SANDBOX:-os}"
 
-# ---- docker: mount the repo, contain everything else -----------------------
+# ---- docker: mount the repo, contain everything else ------------------------
 if [[ "$MODE" == "docker" ]]; then
+  [[ "$AGENT" != "opencode" ]] && { echo "docker sandbox image ships opencode only — use SANDBOX=os with AGENT=$AGENT (or extend the Dockerfile)"; exit 1; }
   command -v docker >/dev/null || { echo "docker not found"; exit 1; }
   echo "→ sandbox: docker  (repo mounted at /work; rest of your Mac isolated)"
   echo "  tip: 'git switch -c wip/feature' first if you want change isolation"
@@ -57,10 +87,9 @@ if [[ "$MODE" == "docker" ]]; then
     opencode-sandbox:latest
 fi
 
-# ---- os / none: throwaway worktree on the host -----------------------------
+# ---- os / none: throwaway worktree on the host -------------------------------
 NAME="${1:-agent-$(date +%H%M%S)}"
 WT="$WT_ROOT/$NAME"
-export OPENCODE_CONFIG="$KIT_DIR/opencode/opencode.json"
 echo "→ worktree: $WT   (branch wip/$NAME)"
 git -C "$REPO" worktree add -b "wip/$NAME" "$WT" >/dev/null
 cd "$WT"
@@ -69,20 +98,20 @@ case "$MODE" in
   os)
     if [[ "$OSTYPE" == darwin* ]]; then
       echo "→ sandbox: macOS Seatbelt (writes limited to worktree)"
-      exec sandbox-exec -D WT="$WT" -f "$KIT_DIR/sandbox/opencode.sb" opencode
+      exec sandbox-exec -D WT="$WT" -f "$KIT_DIR/sandbox/opencode.sb" "$AGENT_BIN"
     elif command -v bwrap >/dev/null; then
       echo "→ sandbox: bubblewrap (writes limited to worktree)"
       exec bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp \
         --bind "$WT" "$WT" --tmpfs "$HOME/.ssh" --tmpfs "$HOME/.aws" \
-        --die-with-parent opencode
+        --die-with-parent "$AGENT_BIN"
     else
       echo "⚠ no OS sandbox available (install bubblewrap on Linux); permission prompts only"
-      exec opencode
+      exec "$AGENT_BIN"
     fi
     ;;
   none)
     echo "→ sandbox: none (permission prompts only)"
-    exec opencode
+    exec "$AGENT_BIN"
     ;;
   *) echo "unknown SANDBOX=$MODE (use os|docker|none)"; exit 1 ;;
 esac
