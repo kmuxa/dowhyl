@@ -112,7 +112,7 @@ cat <<'EOF'
   Next:
     1) (optional) paste your GLM key into  config/primary.env
     2) add bin/ to your PATH:   export PATH="$PWD/bin:$PATH"
-    3) in any project:          code-agent my-first-task
+    3) in any project dir:      code-agent            (modes: plan | edit | auto | full)
     4) check anytime:           status
   See README.md for the daily workflow and how to switch primary/sandbox.
 EOF
